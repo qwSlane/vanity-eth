@@ -17,6 +17,9 @@ import (
 	"vanity-eth/internal/generator"
 )
 
+// version is set at build time via -ldflags "-X vanity-eth/cmd.version=vX.Y.Z"
+var version = "dev"
+
 var (
 	flagPrefix   string
 	flagSuffix   string
@@ -39,8 +42,9 @@ var (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "vanity-eth",
-	Short: "Vanity Ethereum address generator",
+	Use:     "vanity-eth",
+	Version: version,
+	Short:   "Vanity Ethereum address generator",
 	Long: `vanity-eth generates Ethereum addresses matching desired patterns.
 Uses all CPU cores by default for maximum throughput.
 

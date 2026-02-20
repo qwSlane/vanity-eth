@@ -9,34 +9,63 @@
 
 Generate Ethereum wallet addresses matching any pattern you choose.
 
-[![Go version](https://img.shields.io/badge/go-1.22+-blue)](https://golang.org)
-[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-linux%20%7C%20macOS%20%7C%20windows-lightgrey)]()
+[![Release](https://img.shields.io/github/v/release/svasileuski/vanity-eth?style=flat-square)](https://github.com/svasileuski/vanity-eth/releases/latest)
+[![CI](https://img.shields.io/github/actions/workflow/status/svasileuski/vanity-eth/release.yml?style=flat-square&label=build)](https://github.com/svasileuski/vanity-eth/actions)
+[![Go version](https://img.shields.io/badge/go-1.22+-blue?style=flat-square)](https://golang.org)
+[![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-linux%20%7C%20macOS%20%7C%20windows-lightgrey?style=flat-square)]()
 
 ---
 
 ## Features
 
-- **Prefix / suffix / substring / regex** matching
-- **Interactive TUI** (bubbletea) with live stats and ETA
-- **CLI mode** for scripting and automation (`--format json`, `--output file`)
+- **Prefix / suffix / substring** matching — combine them freely
+- **Interactive TUI** with live stats, ETA, and address preview
+- **CLI mode** for scripting (`--format json`, `--output file`)
 - Multi-core by default — ~300 K addr/s on Apple Silicon M-series
 - Real-time ETA based on measured throughput and pattern difficulty
 - Safe: keys are generated locally, never sent anywhere
 
 ---
 
-## Install
+## Download
+
+Pre-built binaries are attached to every [GitHub Release](https://github.com/svasileuski/vanity-eth/releases/latest).
+
+### macOS (Apple Silicon — M1/M2/M3/M4)
+```bash
+curl -L https://github.com/svasileuski/vanity-eth/releases/latest/download/vanity-eth-darwin-arm64 -o vanity-eth
+chmod +x vanity-eth
+# First run: macOS may block unsigned binaries — remove the quarantine flag:
+xattr -cr vanity-eth
+./vanity-eth
+```
+
+### macOS (Intel)
+```bash
+curl -L https://github.com/svasileuski/vanity-eth/releases/latest/download/vanity-eth-darwin-amd64 -o vanity-eth
+chmod +x vanity-eth && xattr -cr vanity-eth && ./vanity-eth
+```
+
+### Linux
+```bash
+curl -L https://github.com/svasileuski/vanity-eth/releases/latest/download/vanity-eth-linux-amd64 -o vanity-eth
+chmod +x vanity-eth && ./vanity-eth
+```
+
+### Windows
+Download `vanity-eth-windows-amd64.exe` from the [Releases page](https://github.com/svasileuski/vanity-eth/releases/latest) and run it in a terminal.
+
+---
+
+## Build from source
 
 ```bash
-# From source (requires Go 1.22+)
-go install github.com/svasileuski/vanity-eth@latest
-
-# Or build manually
+# Requires Go 1.22+
 git clone https://github.com/svasileuski/vanity-eth
 cd vanity-eth
-make build          # produces ./vanity-eth
-make install        # installs to $GOPATH/bin
+make build          # → ./vanity-eth
+make install        # → $GOPATH/bin/vanity-eth
 ```
 
 ---
@@ -49,7 +78,8 @@ make install        # installs to $GOPATH/bin
 vanity-eth
 ```
 
-Use **Tab** to navigate fields, **←→** to change pattern type, **Enter** to start, **s** to save results.
+Fill in the pattern fields, press **Enter** to start searching.
+Use **Tab** to navigate, **Space** to toggle case-sensitive mode, **s** to save results.
 
 ### CLI
 
@@ -60,13 +90,16 @@ vanity-eth --prefix dead
 # Find 3 addresses ending with "cafe"
 vanity-eth --suffix cafe --count 3
 
+# Combine prefix + suffix
+vanity-eth --prefix dead --suffix cafe
+
 # Substring match, save to file
 vanity-eth --contains beef --output results.txt
 
 # Regex match
 vanity-eth --regex "^0x(dead|cafe)"
 
-# JSON output
+# JSON output (for scripting)
 vanity-eth --prefix 00 --format json
 ```
 
@@ -86,6 +119,7 @@ vanity-eth --prefix 00 --format json
 | `--output` | `-o` | — | Save results to this file |
 | `--format` | — | `text` | Output format: `text` or `json` |
 | `--tui` | — | — | Force TUI mode |
+| `--version` | — | — | Print version and exit |
 
 ---
 
@@ -100,6 +134,16 @@ vanity-eth --prefix 00 --format json
 | 8 hex chars   | 4.3 B   | ~4 h                   |
 
 ETA is shown live during search and adjusts to your actual throughput.
+
+---
+
+## Release a new version
+
+```bash
+make tag VERSION=v1.0.0   # creates and pushes the git tag
+```
+
+GitHub Actions then automatically builds all platform binaries and attaches them to the release.
 
 ---
 

@@ -1,0 +1,91 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - { goos: darwin,  goarch: amd64, ext: ''     }
+          - { goos: darwin,  goarch: arm64, ext: ''     }
+          - { goos: linux,   goarch: amd64, ext: ''     }
+          - { goos: linux,   goarch: arm64, ext: ''     }
+          - { goos: windows, goarch: amd64, ext: '.exe' }
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 0
+        run: |
+          BIN="vanity-eth-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}"
+          go build \
+            -ldflags "-s -w -X vanity-eth/cmd.version=${{ github.ref_name }}" \
+            -o "$BIN" .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vanity-eth-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: vanity-eth-${{ matrix.goos }}-${{ matrix.goarch }}${{ matrix.ext }}
+          retention-days: 1
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+          path: dist/
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+          body: |
+            ## Installation
+
+            ### macOS (Apple Silicon)
+            ```bash
+            curl -L https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/vanity-eth-darwin-arm64 -o vanity-eth
+            chmod +x vanity-eth
+            # If Gatekeeper blocks it: xattr -cr vanity-eth
+            ./vanity-eth
+            ```
+
+            ### macOS (Intel)
+            ```bash
+            curl -L https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/vanity-eth-darwin-amd64 -o vanity-eth
+            chmod +x vanity-eth && ./vanity-eth
+            ```
+
+            ### Linux
+            ```bash
+            curl -L https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/vanity-eth-linux-amd64 -o vanity-eth
+            chmod +x vanity-eth && ./vanity-eth
+            ```
