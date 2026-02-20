@@ -36,26 +36,43 @@ type saveErrMsg struct{ err error }
 
 // Form focus indices.
 const (
-	fieldPattern = 0
-	fieldType    = 1
-	fieldCount   = 2
-	fieldWorkers = 3
-	numFields    = 4
+	fieldPrefix    = 0
+	fieldSuffix    = 1
+	fieldContains  = 2
+	fieldCount     = 3
+	fieldWorkers   = 4
+	fieldCase      = 5
+	numFields      = 6
 )
 
-var patTypeNames = []string{"prefix", "suffix", "contains", "regex"}
+// inputIndex maps a focusIdx to m.inputs slice index (-1 if not a text input).
+func inputIndex(fi int) int {
+	switch fi {
+	case fieldPrefix:
+		return 0
+	case fieldSuffix:
+		return 1
+	case fieldContains:
+		return 2
+	case fieldCount:
+		return 3
+	case fieldWorkers:
+		return 4
+	default:
+		return -1
+	}
+}
 
 // Model is the bubbletea application model.
 type Model struct {
-	state   uiState
-	width   int
-	height  int
+	state  uiState
+	width  int
+	height int
 
-	// Form fields: pattern(0), count(1), workers(2).
-	// fieldType is handled separately (not a textinput).
-	inputs   []textinput.Model
-	focusIdx int
-	patType  int // index into patTypeNames
+	// Form: prefix(0) suffix(1) contains(2) count(3) workers(4).
+	inputs        []textinput.Model
+	focusIdx      int
+	caseSensitive bool
 
 	// Running state.
 	ctx       context.Context
@@ -65,7 +82,7 @@ type Model struct {
 	startTime time.Time
 	spinner   spinner.Model
 
-	// Shared results across running/results states.
+	// Shared.
 	results []generator.Result
 	cfg     generator.Config
 
@@ -80,25 +97,25 @@ type Model struct {
 
 // New creates a fresh Model ready for the form state.
 func New() Model {
-	inputs := make([]textinput.Model, 3)
+	inputs := make([]textinput.Model, 5)
 
-	inputs[0] = textinput.New()
-	inputs[0].Placeholder = "dead"
-	inputs[0].CharLimit = 40
-	inputs[0].Width = 28
+	newInput := func(placeholder string, width int) textinput.Model {
+		t := textinput.New()
+		t.Placeholder = placeholder
+		t.CharLimit = 40
+		t.Width = width
+		return t
+	}
+
+	inputs[0] = newInput("e.g. dead", 28) // prefix
+	inputs[1] = newInput("e.g. cafe", 28) // suffix
+	inputs[2] = newInput("e.g. beef", 28) // contains
+	inputs[3] = newInput("1", 6)          // count
+	inputs[3].SetValue("1")
+	inputs[4] = newInput(fmt.Sprintf("%d", runtime.NumCPU()), 6) // workers
+	inputs[4].SetValue(fmt.Sprintf("%d", runtime.NumCPU()))
+
 	inputs[0].Focus()
-
-	inputs[1] = textinput.New()
-	inputs[1].Placeholder = "1"
-	inputs[1].SetValue("1")
-	inputs[1].CharLimit = 5
-	inputs[1].Width = 8
-
-	inputs[2] = textinput.New()
-	inputs[2].Placeholder = fmt.Sprintf("%d", runtime.NumCPU())
-	inputs[2].SetValue(fmt.Sprintf("%d", runtime.NumCPU()))
-	inputs[2].CharLimit = 4
-	inputs[2].Width = 8
 
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
@@ -168,7 +185,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Delegate unhandled msgs to focused text input when on form.
 	if m.state == stateForm {
-		return m.updateFormInput(msg)
+		return m.updateActiveInput(msg)
 	}
 	return m, nil
 }
@@ -191,19 +208,15 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.syncFocus()
 			return m, nil
 
-		case key.Matches(msg, keys.Left):
-			if m.focusIdx == fieldType {
-				m.patType = (m.patType + len(patTypeNames) - 1) % len(patTypeNames)
-			}
-			return m, nil
-
-		case key.Matches(msg, keys.Right):
-			if m.focusIdx == fieldType {
-				m.patType = (m.patType + 1) % len(patTypeNames)
-			}
+		case msg.String() == " " && m.focusIdx == fieldCase:
+			m.caseSensitive = !m.caseSensitive
 			return m, nil
 
 		case key.Matches(msg, keys.Enter):
+			if m.focusIdx == fieldCase {
+				m.caseSensitive = !m.caseSensitive
+				return m, nil
+			}
 			if err := m.prepareSearch(); err != nil {
 				m.errMsg = err.Error()
 				return m, nil
@@ -216,29 +229,24 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			)
 
 		default:
-			return m.updateFormInput(msg)
+			return m.updateActiveInput(msg)
 		}
 
 	case stateRunning:
-		switch {
-		case key.Matches(msg, keys.Stop):
+		if key.Matches(msg, keys.Stop) {
 			if m.cancel != nil {
 				m.cancel()
 			}
-			// doneMsg will arrive once resultCh is closed by the generator.
-			return m, nil
 		}
 
 	case stateResults:
 		switch {
 		case key.Matches(msg, keys.Quit):
 			return m, tea.Quit
-
 		case key.Matches(msg, keys.Save):
 			m.infoMsg = ""
 			m.errMsg = ""
 			return m, saveResults(m.results)
-
 		case key.Matches(msg, keys.New):
 			next := New()
 			next.width = m.width
@@ -250,18 +258,44 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// updateFormInput delegates keyboard events to the currently focused text input.
-func (m Model) updateFormInput(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if m.focusIdx == fieldType {
-		return m, nil
-	}
-	idx := formInputIndex(m.focusIdx)
+// updateActiveInput forwards the message to the focused text input and
+// validates hex fields in real time.
+func (m Model) updateActiveInput(msg tea.Msg) (tea.Model, tea.Cmd) {
+	idx := inputIndex(m.focusIdx)
 	if idx < 0 {
 		return m, nil
 	}
 	var cmd tea.Cmd
 	m.inputs[idx], cmd = m.inputs[idx].Update(msg)
+
+	// Real-time hex validation for prefix/suffix/contains.
+	if m.focusIdx == fieldPrefix || m.focusIdx == fieldSuffix || m.focusIdx == fieldContains {
+		m.errMsg = hexValidationError(m.inputs[idx].Value(), fieldLabel(m.focusIdx))
+	}
 	return m, cmd
+}
+
+func fieldLabel(fi int) string {
+	switch fi {
+	case fieldPrefix:
+		return "prefix"
+	case fieldSuffix:
+		return "suffix"
+	case fieldContains:
+		return "contains"
+	default:
+		return ""
+	}
+}
+
+// hexValidationError returns an error string if val contains non-hex chars.
+func hexValidationError(val, label string) string {
+	for _, c := range strings.ToLower(val) {
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+			return fmt.Sprintf("%s: '%c' is not a valid hex character (0-9, a-f)", label, c)
+		}
+	}
+	return ""
 }
 
 // syncFocus blurs all inputs and focuses the active one (if applicable).
@@ -269,55 +303,43 @@ func (m *Model) syncFocus() {
 	for i := range m.inputs {
 		m.inputs[i].Blur()
 	}
-	if m.focusIdx != fieldType {
-		m.inputs[formInputIndex(m.focusIdx)].Focus()
-	}
-}
-
-// formInputIndex maps a form focusIdx to an index in m.inputs.
-func formInputIndex(fi int) int {
-	switch fi {
-	case fieldPattern:
-		return 0
-	case fieldCount:
-		return 1
-	case fieldWorkers:
-		return 2
-	default:
-		return -1
+	if idx := inputIndex(m.focusIdx); idx >= 0 {
+		m.inputs[idx].Focus()
 	}
 }
 
 // prepareSearch validates form values and transitions to stateRunning.
 func (m *Model) prepareSearch() error {
-	pattern := strings.TrimSpace(m.inputs[0].Value())
-	if pattern == "" {
-		return fmt.Errorf("pattern cannot be empty")
+	prefix := strings.TrimSpace(m.inputs[0].Value())
+	suffix := strings.TrimSpace(m.inputs[1].Value())
+	contains := strings.TrimSpace(m.inputs[2].Value())
+
+	if prefix == "" && suffix == "" && contains == "" {
+		return fmt.Errorf("enter at least one of: prefix, suffix, or contains")
 	}
-	if m.patType != 3 && !generator.IsValidHexPattern(pattern) {
-		return fmt.Errorf("pattern must be hex characters (0-9, a-f)")
+	for label, val := range map[string]string{"prefix": prefix, "suffix": suffix, "contains": contains} {
+		if val != "" && !generator.IsValidHexPattern(val) {
+			return fmt.Errorf("%s must be hex characters only (0-9, a-f)", label)
+		}
 	}
 
-	count, err := strconv.Atoi(strings.TrimSpace(m.inputs[1].Value()))
+	count, err := strconv.Atoi(strings.TrimSpace(m.inputs[3].Value()))
 	if err != nil || count < 1 {
 		return fmt.Errorf("count must be a positive integer")
 	}
 
-	workers, err := strconv.Atoi(strings.TrimSpace(m.inputs[2].Value()))
+	workers, err := strconv.Atoi(strings.TrimSpace(m.inputs[4].Value()))
 	if err != nil || workers < 1 {
 		return fmt.Errorf("workers must be a positive integer")
 	}
 
-	m.cfg = generator.Config{Workers: workers, Count: count}
-	switch m.patType {
-	case 0:
-		m.cfg.Prefix = pattern
-	case 1:
-		m.cfg.Suffix = pattern
-	case 2:
-		m.cfg.Contains = pattern
-	case 3:
-		m.cfg.Regex = pattern
+	m.cfg = generator.Config{
+		Prefix:        prefix,
+		Suffix:        suffix,
+		Contains:      contains,
+		Workers:       workers,
+		Count:         count,
+		CaseSensitive: m.caseSensitive,
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -341,11 +363,10 @@ func (m Model) runGenerator() tea.Cmd {
 	ctx := m.ctx
 	return func() tea.Msg {
 		generator.Run(ctx, cfg, ch, stats)
-		return nil // channel is now closed; waitForResult will deliver doneMsg
+		return nil
 	}
 }
 
-// waitForResult blocks until the next result (or channel close).
 func waitForResult(ch <-chan generator.Result) tea.Cmd {
 	return func() tea.Msg {
 		r, ok := <-ch
@@ -356,14 +377,12 @@ func waitForResult(ch <-chan generator.Result) tea.Cmd {
 	}
 }
 
-// tick schedules a UI refresh every 250 ms.
 func tick() tea.Cmd {
 	return tea.Tick(250*time.Millisecond, func(t time.Time) tea.Msg {
 		return tickMsg(t)
 	})
 }
 
-// saveResults writes results to a timestamped file.
 func saveResults(results []generator.Result) tea.Cmd {
 	return func() tea.Msg {
 		path := fmt.Sprintf("vanity-eth-%s.txt", time.Now().Format("20060102-150405"))
@@ -395,7 +414,6 @@ func (m Model) View() string {
 	}
 
 	box := styleBox.Render(body)
-
 	if m.width > 0 && m.height > 0 {
 		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
 	}
@@ -410,52 +428,120 @@ func (m Model) viewForm() string {
 	b.WriteString(styleTitle.Render("vanity-eth") + "\n")
 	b.WriteString(styleMuted.Render("Generate Ethereum vanity addresses") + "\n\n")
 
-	// Pattern input
-	b.WriteString(rowLabel("Pattern", m.focusIdx == fieldPattern))
-	b.WriteString(m.inputs[0].View() + "\n\n")
+	row := func(label string, fi int, field string) string {
+		lbl := styleLabel
+		if m.focusIdx == fi {
+			lbl = styleSelected
+		}
+		return lbl.Width(11).Render(label) + "  " + field + "\n"
+	}
 
-	// Type selector
-	b.WriteString(rowLabel("Type", m.focusIdx == fieldType))
-	b.WriteString(renderTypeSelector(m.patType, m.focusIdx == fieldType) + "\n\n")
+	b.WriteString(row("Prefix", fieldPrefix, m.inputs[0].View()))
+	b.WriteString(row("Suffix", fieldSuffix, m.inputs[1].View()))
+	b.WriteString(row("Contains", fieldContains, m.inputs[2].View()))
+	b.WriteString("\n")
+	b.WriteString(row("Count", fieldCount, m.inputs[3].View()))
+	b.WriteString(row("Workers", fieldWorkers, m.inputs[4].View()))
 
-	// Count input
-	b.WriteString(rowLabel("Count", m.focusIdx == fieldCount))
-	b.WriteString(m.inputs[1].View() + "\n\n")
+	// Case-sensitive toggle
+	box := "[ ]"
+	if m.caseSensitive {
+		box = styleSuccess.Render("[✓]")
+	}
+	caseLbl := styleLabel
+	if m.focusIdx == fieldCase {
+		caseLbl = styleSelected
+	}
+	b.WriteString(caseLbl.Width(11).Render("Case") + "  " + box + " sensitive\n")
 
-	// Workers input
-	b.WriteString(rowLabel("Workers", m.focusIdx == fieldWorkers))
-	b.WriteString(m.inputs[2].View() + "\n\n")
+	b.WriteString("\n")
 
-	// Error message
+	// Live preview
+	b.WriteString(renderPreview(
+		m.inputs[0].Value(),
+		m.inputs[1].Value(),
+		m.inputs[2].Value(),
+	))
+
+	// Difficulty hint
+	if d := generator.HexDifficulty(
+		m.inputs[0].Value(),
+		m.inputs[1].Value(),
+		m.inputs[2].Value(),
+	); d != nil {
+		b.WriteString(styleMuted.Render("  ~1 in "+formatBigInt(d)+"\n"))
+	}
+
+	b.WriteString("\n")
+
 	if m.errMsg != "" {
 		b.WriteString(styleDanger.Render("  "+m.errMsg) + "\n\n")
 	}
 
-	// Help line
-	b.WriteString(styleHelp.Render("tab navigate  ←→ type  enter start  ctrl+c quit"))
-
+	b.WriteString(styleHelp.Render("tab navigate  space toggle case  enter start  ctrl+c quit"))
 	return b.String()
 }
 
-func rowLabel(label string, focused bool) string {
-	s := styleLabel.Render(label)
-	if focused {
-		s = styleSelected.Render(label)
-	}
-	return fmt.Sprintf("%-10s  ", s)
-}
+// renderPreview builds a colour-coded address skeleton.
+func renderPreview(prefix, suffix, contains string) string {
+	const addrLen = 40
+	prefix = strings.ToLower(prefix)
+	suffix = strings.ToLower(suffix)
+	contains = strings.ToLower(contains)
 
-func renderTypeSelector(current int, focused bool) string {
-	left := styleMuted.Render("←")
-	right := styleMuted.Render("→")
-	name := patTypeNames[current]
-	var middle string
-	if focused {
-		middle = styleAccent.Render(" " + name + " ")
-	} else {
-		middle = styleStat.Render(" " + name + " ")
+	// Build a slot array: each position is (char, kind).
+	// kind: 0=unknown, 1=prefix, 2=suffix, 3=contains
+	type slot struct {
+		ch   byte
+		kind int
 	}
-	return left + middle + right
+	slots := make([]slot, addrLen)
+	for i := range slots {
+		slots[i] = slot{'?', 0}
+	}
+
+	// Fill prefix.
+	for i := 0; i < len(prefix) && i < addrLen; i++ {
+		slots[i] = slot{prefix[i], 1}
+	}
+	// Fill suffix.
+	start := addrLen - len(suffix)
+	if start < 0 {
+		start = 0
+	}
+	for i := 0; i < len(suffix) && start+i < addrLen; i++ {
+		slots[start+i] = slot{suffix[i], 2}
+	}
+	// Fill contains in the middle (best-effort, no overlap with prefix/suffix).
+	if contains != "" {
+		free := addrLen - len(prefix) - len(suffix)
+		if free >= len(contains) {
+			mid := len(prefix) + (free-len(contains))/2
+			for i := 0; i < len(contains) && mid+i < addrLen; i++ {
+				if slots[mid+i].kind == 0 {
+					slots[mid+i] = slot{contains[i], 3}
+				}
+			}
+		}
+	}
+
+	var b strings.Builder
+	b.WriteString(styleMuted.Render("  Preview") + "  0x")
+	for _, s := range slots {
+		ch := string([]byte{s.ch})
+		switch s.kind {
+		case 1:
+			b.WriteString(styleSuccess.Render(ch))
+		case 2:
+			b.WriteString(styleSuccess.Render(ch))
+		case 3:
+			b.WriteString(styleAccent.Render(ch))
+		default:
+			b.WriteString(styleMuted.Render(ch))
+		}
+	}
+	b.WriteString("\n")
+	return b.String()
 }
 
 // ---- Running view ----------------------------------------------------------
@@ -480,21 +566,19 @@ func (m Model) viewRunning() string {
 		etaStr = fmtDuration(eta)
 	}
 
-	b.WriteString(statRow("Tried", formatBig(total)) + "  " +
-		statRow("Rate", fmt.Sprintf("%.0f/s", rate)) + "\n")
-	b.WriteString(statRow("Found", fmt.Sprintf("%d/%d", found, m.cfg.Count)) + "  " +
-		statRow("Time", fmtDuration(elapsed)) + "\n")
+	b.WriteString(statRow("Tried", formatBig(total)) + "  " + statRow("Rate", fmt.Sprintf("%.0f/s", rate)) + "\n")
+	b.WriteString(statRow("Found", fmt.Sprintf("%d/%d", found, m.cfg.Count)) + "  " + statRow("Time", fmtDuration(elapsed)) + "\n")
 	b.WriteString(statRow("ETA", etaStr) + "\n\n")
 
 	if len(m.results) > 0 {
 		b.WriteString(styleSuccess.Render("Results so far:") + "\n")
 		for _, r := range m.results {
-			b.WriteString("  " + styleSuccess.Render("✓") + " " + styleStat.Render(truncate(r.Address, 28)) + "\n")
+			b.WriteString("  " + styleSuccess.Render("✓") + " " + styleStat.Render(truncate(r.Address, 32)) + "\n")
 		}
 		b.WriteString("\n")
 	}
 
-	b.WriteString(styleHelp.Render("ctrl+c  stop search"))
+	b.WriteString(styleHelp.Render("ctrl+c · q  stop search"))
 	return b.String()
 }
 
@@ -533,14 +617,13 @@ func (m Model) viewResults() string {
 
 // ---- Helpers ---------------------------------------------------------------
 
-// computeETA estimates remaining time based on live rate and remaining matches.
 func computeETA(cfg generator.Config, found int, ratePerSec float64) time.Duration {
 	if ratePerSec <= 0 {
 		return 0
 	}
 	d := generator.HexDifficulty(cfg.Prefix, cfg.Suffix, cfg.Contains)
 	if d == nil {
-		return 0 // regex patterns: difficulty unknown
+		return 0
 	}
 	remaining := cfg.Count - found
 	if remaining <= 0 {
@@ -553,22 +636,24 @@ func computeETA(cfg generator.Config, found int, ratePerSec float64) time.Durati
 }
 
 func statRow(label, value string) string {
-	return styleLabel.Render(label) + "  " + styleAccent.Render(value)
+	return styleLabel.Width(7).Render(label) + "  " + styleAccent.Render(value)
 }
 
 func patternDesc(cfg generator.Config) string {
-	switch {
-	case cfg.Prefix != "":
-		return fmt.Sprintf("prefix %q", cfg.Prefix)
-	case cfg.Suffix != "":
-		return fmt.Sprintf("suffix %q", cfg.Suffix)
-	case cfg.Contains != "":
-		return fmt.Sprintf("contains %q", cfg.Contains)
-	case cfg.Regex != "":
-		return fmt.Sprintf("regex %q", cfg.Regex)
-	default:
-		return "?"
+	var parts []string
+	if cfg.Prefix != "" {
+		parts = append(parts, fmt.Sprintf("prefix %q", cfg.Prefix))
 	}
+	if cfg.Suffix != "" {
+		parts = append(parts, fmt.Sprintf("suffix %q", cfg.Suffix))
+	}
+	if cfg.Contains != "" {
+		parts = append(parts, fmt.Sprintf("contains %q", cfg.Contains))
+	}
+	if cfg.Regex != "" {
+		parts = append(parts, fmt.Sprintf("regex %q", cfg.Regex))
+	}
+	return strings.Join(parts, " + ")
 }
 
 func fmtDuration(d time.Duration) string {
@@ -582,6 +667,7 @@ func fmtDuration(d time.Duration) string {
 	return fmt.Sprintf("%02d:%02d", m, s)
 }
 
+// formatBig formats a live counter (int64) in a human-readable way.
 func formatBig(n int64) string {
 	switch {
 	case n < 1_000:
@@ -592,6 +678,23 @@ func formatBig(n int64) string {
 		return fmt.Sprintf("%.2fM", float64(n)/1e6)
 	default:
 		return fmt.Sprintf("%.3fB", float64(n)/1e9)
+	}
+}
+
+// formatBigInt formats a large difficulty number (e.g. 16^8) compactly.
+func formatBigInt(n *big.Int) string {
+	f, _ := new(big.Float).SetInt(n).Float64()
+	switch {
+	case f < 1_000:
+		return fmt.Sprintf("%.0f", f)
+	case f < 1_000_000:
+		return fmt.Sprintf("%.1fK", f/1e3)
+	case f < 1_000_000_000:
+		return fmt.Sprintf("%.2fM", f/1e6)
+	case f < 1_000_000_000_000:
+		return fmt.Sprintf("%.2fB", f/1e9)
+	default:
+		return fmt.Sprintf("%.2fT", f/1e12)
 	}
 }
 
