@@ -1,16 +1,18 @@
 # vanity-eth
 
 ```
-__   ___   _  _ ___ _______   __   ___ _____ _  _
-\ \ / /_\ | \| |_ _|_   _\ \ / /__| __|_   _| || |
- \ V / _ \| .` || |  | |  \ V /___| _|  | | | __ |
-  \_/_/ \_\_|\_|___| |_|   |_|    |___| |_| |_||_|
+██╗   ██╗ █████╗ ███╗  ██╗██╗████████╗██╗   ██╗    ███████╗████████╗██╗  ██╗
+██║   ██║██╔══██╗████╗ ██║██║╚══██╔══╝╚██╗ ██╔╝    ██╔════╝╚══██╔══╝██║  ██║
+██║   ██║███████║██╔██╗██║██║   ██║    ╚████╔╝     █████╗     ██║   ███████║
+╚██╗ ██╔╝██╔══██║██║╚████║██║   ██║     ╚██╔╝      ██╔══╝     ██║   ██╔══██║
+ ╚████╔╝ ██║  ██║██║ ╚███║██║   ██║      ██║       ███████╗   ██║   ██║  ██║
+  ╚═══╝  ╚═╝  ╚═╝╚═╝  ╚══╝╚═╝   ╚═╝      ╚═╝       ╚══════╝   ╚═╝   ╚═╝  ╚═╝
 ```
 
 Generate Ethereum wallet addresses matching any pattern you choose.
 
-[![Release](https://img.shields.io/github/v/release/svasileuski/vanity-eth?style=flat-square)](https://github.com/svasileuski/vanity-eth/releases/latest)
-[![CI](https://img.shields.io/github/actions/workflow/status/svasileuski/vanity-eth/release.yml?style=flat-square&label=build)](https://github.com/svasileuski/vanity-eth/actions)
+[![Release](https://img.shields.io/github/v/release/qwSlane/vanity-eth?style=flat-square)](https://github.com/qwSlane/vanity-eth/releases/latest)
+[![CI](https://img.shields.io/github/actions/workflow/status/qwSlane/vanity-eth/release.yml?style=flat-square&label=build)](https://github.com/qwSlane/vanity-eth/actions)
 [![Go version](https://img.shields.io/badge/go-1.22+-blue?style=flat-square)](https://golang.org)
 [![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-linux%20%7C%20macOS%20%7C%20windows-lightgrey?style=flat-square)]()
@@ -30,11 +32,11 @@ Generate Ethereum wallet addresses matching any pattern you choose.
 
 ## Download
 
-Pre-built binaries are attached to every [GitHub Release](https://github.com/svasileuski/vanity-eth/releases/latest).
+Pre-built binaries are attached to every [GitHub Release](https://github.com/qwSlane/vanity-eth/releases/latest).
 
 ### macOS (Apple Silicon — M1/M2/M3/M4)
 ```bash
-curl -L https://github.com/svasileuski/vanity-eth/releases/latest/download/vanity-eth-darwin-arm64 -o vanity-eth
+curl -L https://github.com/qwSlane/vanity-eth/releases/latest/download/vanity-eth-darwin-arm64 -o vanity-eth
 chmod +x vanity-eth
 # First run: macOS may block unsigned binaries — remove the quarantine flag:
 xattr -cr vanity-eth
@@ -43,18 +45,18 @@ xattr -cr vanity-eth
 
 ### macOS (Intel)
 ```bash
-curl -L https://github.com/svasileuski/vanity-eth/releases/latest/download/vanity-eth-darwin-amd64 -o vanity-eth
+curl -L https://github.com/qwSlane/vanity-eth/releases/latest/download/vanity-eth-darwin-amd64 -o vanity-eth
 chmod +x vanity-eth && xattr -cr vanity-eth && ./vanity-eth
 ```
 
 ### Linux
 ```bash
-curl -L https://github.com/svasileuski/vanity-eth/releases/latest/download/vanity-eth-linux-amd64 -o vanity-eth
+curl -L https://github.com/qwSlane/vanity-eth/releases/latest/download/vanity-eth-linux-amd64 -o vanity-eth
 chmod +x vanity-eth && ./vanity-eth
 ```
 
 ### Windows
-Download `vanity-eth-windows-amd64.exe` from the [Releases page](https://github.com/svasileuski/vanity-eth/releases/latest) and run it in a terminal.
+Download `vanity-eth-windows-amd64.exe` from the [Releases page](https://github.com/qwSlane/vanity-eth/releases/latest) and run it in a terminal.
 
 ---
 
@@ -62,7 +64,7 @@ Download `vanity-eth-windows-amd64.exe` from the [Releases page](https://github.
 
 ```bash
 # Requires Go 1.22+
-git clone https://github.com/svasileuski/vanity-eth
+git clone https://github.com/qwSlane/vanity-eth
 cd vanity-eth
 make build          # → ./vanity-eth
 make install        # → $GOPATH/bin/vanity-eth
