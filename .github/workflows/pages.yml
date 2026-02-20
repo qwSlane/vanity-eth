@@ -20,6 +20,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Guard against re-run on old commit
+        run: |
+          set -euo pipefail
+          MAIN_HEAD="$(git ls-remote --heads origin main | awk '{print $1}')"
+          if [ -z "$MAIN_HEAD" ]; then
+            echo "Could not resolve origin/main"
+            exit 1
+          fi
+          if [ "${GITHUB_SHA}" != "${MAIN_HEAD}" ]; then
+            echo "Refusing deploy from old SHA."
+            echo "Run SHA:  ${GITHUB_SHA}"
+            echo "main SHA: ${MAIN_HEAD}"
+            exit 1
+          fi
+
       - name: Install pandoc
         run: sudo apt-get install -y pandoc
 
