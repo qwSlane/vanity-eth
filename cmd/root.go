@@ -34,12 +34,22 @@ var (
 )
 
 var (
-	green  = color.New(color.FgGreen, color.Bold)
-	yellow = color.New(color.FgYellow, color.Bold)
-	cyan   = color.New(color.FgCyan)
-	red    = color.New(color.FgRed)
-	bold   = color.New(color.Bold)
+	green   = color.New(color.FgGreen, color.Bold)
+	yellow  = color.New(color.FgYellow, color.Bold)
+	cyan    = color.New(color.FgCyan)
+	red     = color.New(color.FgRed)
+	bold    = color.New(color.Bold)
+	magenta = color.New(color.FgMagenta, color.Bold)
 )
+
+const logoASCII = `
+██╗   ██╗ █████╗ ███╗  ██╗██╗████████╗██╗   ██╗    ███████╗████████╗██╗  ██╗
+██║   ██║██╔══██╗████╗ ██║██║╚══██╔══╝╚██╗ ██╔╝    ██╔════╝╚══██╔══╝██║  ██║
+██║   ██║███████║██╔██╗██║██║   ██║    ╚████╔╝     █████╗     ██║   ███████║
+╚██╗ ██╔╝██╔══██║██║╚████║██║   ██║     ╚██╔╝      ██╔══╝     ██║   ██╔══██║
+ ╚████╔╝ ██║  ██║██║ ╚███║██║   ██║      ██║       ███████╗   ██║   ██║  ██║
+  ╚═══╝  ╚═╝  ╚═╝╚═╝  ╚══╝╚═╝   ╚═╝      ╚═╝       ╚══════╝   ╚═╝   ╚═╝  ╚═╝
+`
 
 var rootCmd = &cobra.Command{
 	Use:     "vanity-eth",
@@ -113,7 +123,8 @@ func runCLI(cmd *cobra.Command) error {
 		CaseSensitive: flagCase,
 	}
 
-	bold.Printf("\nvanity-eth  •  workers: %d  •  target: %d address(es)\n", flagWorkers, flagCount)
+	magenta.Print(logoASCII)
+	bold.Printf("vanity-eth  •  workers: %d  •  target: %d address(es)\n", flagWorkers, flagCount)
 	printPattern(flagPrefix, flagSuffix, flagContains, flagRegex)
 	fmt.Println()
 

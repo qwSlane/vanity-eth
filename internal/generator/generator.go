@@ -47,14 +47,31 @@ func HexDifficulty(prefix, suffix, contains string) *big.Int {
 	return new(big.Int).Exp(big.NewInt(16), big.NewInt(int64(hexLen)), nil)
 }
 
-// IsValidHexPattern returns true if s is a non-empty valid hex string.
+// IsValidHexPattern returns true if s is a valid hex pattern,
+// optionally with | for alternation (e.g. "dead|cafe").
 func IsValidHexPattern(s string) bool {
-	for _, c := range strings.ToLower(s) {
-		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+	parts := strings.Split(s, "|")
+	for _, p := range parts {
+		if len(p) == 0 {
 			return false
+		}
+		for _, c := range strings.ToLower(p) {
+			if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+				return false
+			}
 		}
 	}
 	return len(s) > 0
+}
+
+// matchAlt returns true if check(haystack, alt) is true for any |-separated alternative.
+func matchAlt(haystack, pattern string, check func(string, string) bool) bool {
+	for _, alt := range strings.Split(pattern, "|") {
+		if check(haystack, alt) {
+			return true
+		}
+	}
+	return false
 }
 
 // BuildMatcher returns a match function for the given criteria.
@@ -73,13 +90,13 @@ func BuildMatcher(prefix, suffix, contains string, re *regexp.Regexp, caseSensit
 		a := normalize(addr)
 		bare := strings.TrimPrefix(a, "0x")
 
-		if prefix != "" && !strings.HasPrefix(bare, prefix) {
+		if prefix != "" && !matchAlt(bare, prefix, strings.HasPrefix) {
 			return false
 		}
-		if suffix != "" && !strings.HasSuffix(bare, suffix) {
+		if suffix != "" && !matchAlt(bare, suffix, strings.HasSuffix) {
 			return false
 		}
-		if contains != "" && !strings.Contains(bare, contains) {
+		if contains != "" && !matchAlt(bare, contains, strings.Contains) {
 			return false
 		}
 		if re != nil && !re.MatchString(addr) {

@@ -107,9 +107,9 @@ func New() Model {
 		return t
 	}
 
-	inputs[0] = newInput("e.g. dead", 28) // prefix
-	inputs[1] = newInput("e.g. cafe", 28) // suffix
-	inputs[2] = newInput("e.g. beef", 28) // contains
+	inputs[0] = newInput("e.g. e|f|ff", 28) // prefix
+	inputs[1] = newInput("e.g. e|f|ff", 28) // suffix
+	inputs[2] = newInput("e.g. e|f|ff", 28) // contains
 	inputs[3] = newInput("1", 6)          // count
 	inputs[3].SetValue("1")
 	inputs[4] = newInput(fmt.Sprintf("%d", runtime.NumCPU()), 6) // workers
@@ -288,11 +288,17 @@ func fieldLabel(fi int) string {
 	}
 }
 
-// hexValidationError returns an error string if val contains non-hex chars.
+// hexValidationError returns an error string if val contains invalid chars.
+// Allows | for alternation (e.g. "dead|cafe").
 func hexValidationError(val, label string) string {
-	for _, c := range strings.ToLower(val) {
-		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
-			return fmt.Sprintf("%s: '%c' is not a valid hex character (0-9, a-f)", label, c)
+	for _, part := range strings.Split(val, "|") {
+		if part == "" {
+			return fmt.Sprintf("%s: empty alternative in '|' pattern", label)
+		}
+		for _, c := range strings.ToLower(part) {
+			if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+				return fmt.Sprintf("%s: '%c' is not valid (use 0-9, a-f, | for alternation)", label, c)
+			}
 		}
 	}
 	return ""
@@ -478,68 +484,68 @@ func (m Model) viewForm() string {
 		b.WriteString(styleDanger.Render("  "+m.errMsg) + "\n\n")
 	}
 
-	b.WriteString(styleHelp.Render("tab navigate  space toggle case  enter start  ctrl+c quit"))
+	b.WriteString(styleHelp.Render("tab navigate  space toggle case  enter start  esc/ctrl+c quit"))
 	return b.String()
 }
 
 // renderPreview builds a colour-coded address skeleton.
+// Patterns with | alternation (e.g. "e|f|ff") are shown as "(e|f|ff)".
 func renderPreview(prefix, suffix, contains string) string {
 	const addrLen = 40
 	prefix = strings.ToLower(prefix)
 	suffix = strings.ToLower(suffix)
 	contains = strings.ToLower(contains)
 
-	// Build a slot array: each position is (char, kind).
-	// kind: 0=unknown, 1=prefix, 2=suffix, 3=contains
-	type slot struct {
-		ch   byte
-		kind int
-	}
-	slots := make([]slot, addrLen)
-	for i := range slots {
-		slots[i] = slot{'?', 0}
-	}
-
-	// Fill prefix.
-	for i := 0; i < len(prefix) && i < addrLen; i++ {
-		slots[i] = slot{prefix[i], 1}
-	}
-	// Fill suffix.
-	start := addrLen - len(suffix)
-	if start < 0 {
-		start = 0
-	}
-	for i := 0; i < len(suffix) && start+i < addrLen; i++ {
-		slots[start+i] = slot{suffix[i], 2}
-	}
-	// Fill contains in the middle (best-effort, no overlap with prefix/suffix).
-	if contains != "" {
-		free := addrLen - len(prefix) - len(suffix)
-		if free >= len(contains) {
-			mid := len(prefix) + (free-len(contains))/2
-			for i := 0; i < len(contains) && mid+i < addrLen; i++ {
-				if slots[mid+i].kind == 0 {
-					slots[mid+i] = slot{contains[i], 3}
-				}
+	// patToken returns the display text and hex positions consumed (min alt length).
+	patToken := func(pat string) (string, int) {
+		if pat == "" {
+			return "", 0
+		}
+		if !strings.Contains(pat, "|") {
+			return pat, len(pat)
+		}
+		parts := strings.Split(pat, "|")
+		minLen := len(parts[0])
+		for _, p := range parts[1:] {
+			if len(p) < minLen {
+				minLen = len(p)
 			}
 		}
+		return "(" + pat + ")", minLen
 	}
+
+	prefixTok, prefixLen := patToken(prefix)
+	suffixTok, suffixLen := patToken(suffix)
+	containsTok, containsLen := patToken(contains)
 
 	var b strings.Builder
 	b.WriteString(styleMuted.Render("  Preview") + "  0x")
-	for _, s := range slots {
-		ch := string([]byte{s.ch})
-		switch s.kind {
-		case 1:
-			b.WriteString(styleSuccess.Render(ch))
-		case 2:
-			b.WriteString(styleSuccess.Render(ch))
-		case 3:
-			b.WriteString(styleAccent.Render(ch))
-		default:
-			b.WriteString(styleMuted.Render(ch))
+
+	if prefixTok != "" {
+		b.WriteString(styleSuccess.Render(prefixTok))
+	}
+
+	middle := addrLen - prefixLen - suffixLen
+	if containsTok != "" && containsLen <= middle {
+		before := (middle - containsLen) / 2
+		after := middle - before - containsLen
+		for i := 0; i < before; i++ {
+			b.WriteString(styleMuted.Render("?"))
+		}
+		b.WriteString(styleAccent.Render(containsTok))
+		for i := 0; i < after; i++ {
+			b.WriteString(styleMuted.Render("?"))
+		}
+	} else {
+		for i := 0; i < middle; i++ {
+			b.WriteString(styleMuted.Render("?"))
 		}
 	}
+
+	if suffixTok != "" {
+		b.WriteString(styleSuccess.Render(suffixTok))
+	}
+
 	b.WriteString("\n")
 	return b.String()
 }

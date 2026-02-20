@@ -36,8 +36,8 @@ var keys = keyMap{
 		key.WithHelp("enter", "start"),
 	),
 	Stop: key.NewBinding(
-		key.WithKeys("ctrl+c", "q"),
-		key.WithHelp("ctrl+c", "stop"),
+		key.WithKeys("ctrl+c", "q", "esc"),
+		key.WithHelp("ctrl+c/esc", "stop"),
 	),
 	Save: key.NewBinding(
 		key.WithKeys("s"),
@@ -48,7 +48,7 @@ var keys = keyMap{
 		key.WithHelp("n", "new search"),
 	),
 	Quit: key.NewBinding(
-		key.WithKeys("ctrl+c", "q"),
-		key.WithHelp("ctrl+c/q", "quit"),
+		key.WithKeys("ctrl+c", "q", "esc"),
+		key.WithHelp("ctrl+c/q/esc", "quit"),
 	),
 }
