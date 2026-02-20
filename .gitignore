@@ -1,0 +1,18 @@
+# Binary
+vanity-eth
+vanity-eth-*
+*.exe
+
+# IDE
+.idea/
+.vscode/
+*.code-workspace
+
+# macOS
+.DS_Store
+
+# Output files
+vanity-eth-*.txt
+
+# Go build cache
+/vendor/
