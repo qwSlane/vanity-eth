@@ -5,6 +5,8 @@ import "github.com/charmbracelet/bubbles/key"
 type keyMap struct {
 	Tab      key.Binding
 	ShiftTab key.Binding
+	Up       key.Binding
+	Down     key.Binding
 	Left     key.Binding
 	Right    key.Binding
 	Enter    key.Binding
@@ -23,13 +25,21 @@ var keys = keyMap{
 		key.WithKeys("shift+tab"),
 		key.WithHelp("shift+tab", "prev"),
 	),
+	Up: key.NewBinding(
+		key.WithKeys("up"),
+		key.WithHelp("↑", "prev"),
+	),
+	Down: key.NewBinding(
+		key.WithKeys("down"),
+		key.WithHelp("↓", "next"),
+	),
 	Left: key.NewBinding(
 		key.WithKeys("left"),
-		key.WithHelp("←", "prev type"),
+		key.WithHelp("←", "prev"),
 	),
 	Right: key.NewBinding(
 		key.WithKeys("right"),
-		key.WithHelp("→", "next type"),
+		key.WithHelp("→", "next"),
 	),
 	Enter: key.NewBinding(
 		key.WithKeys("enter"),

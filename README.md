@@ -15,8 +15,8 @@
 │   vanity-eth                                             │
 │   Generate Ethereum vanity addresses                     │
 │                                                          │
-│   Prefix       > e|f|ff                                  │
-│   Suffix       > cafe                                    │
+│   Prefix       > (a|b|c)(10|20|30|40|50)                 │
+│   Suffix       > c0ffee                                  │
 │   Contains     > beef                                    │
 │                                                          │
 │   Count        > 1                                       │
@@ -24,10 +24,12 @@
 │   Case         [ ] sensitive                             │
 │                                                          │
 │   Preview                                                │
-│    0x(e|f|ff)...............beef................cafe     │
+│    0x(a|b|c)(10|20|30|40|50)......beef..........c0ffee   │
 │                                                          │
-│   tab navigate  space case  enter start  esc/ctrl+c      │
-│   quit                                                   │
+│             up/down/tab move between fields              │
+│             space toggles case sensitive                 │
+│             enter starts search                          │
+│             esc/ctrl+c/q quits                           │
 │                                                          │
 ╰──────────────────────────────────────────────────────────╯
 ```
@@ -124,6 +126,9 @@ vanity-eth --contains beef --output results.txt
 # Regex match
 vanity-eth --regex "^0x(dead|cafe)"
 
+# Grouped pattern in prefix (sequence with brackets + alternation)
+vanity-eth --prefix "x(a|b|c)(10|20|30|40|50)" --suffix c0ffee
+
 # JSON output (for scripting)
 vanity-eth --prefix 00 --format json
 ```
@@ -134,9 +139,9 @@ vanity-eth --prefix 00 --format json
 
 | Flag | Short | Default | Description |
 |------|-------|---------|-------------|
-| `--prefix` | `-p` | — | Address must start with this hex string (after `0x`) |
+| `--prefix` | `-p` | — | Address must start with this hex pattern (supports `|` and groups like `(ab|cd)ef`) |
 | `--suffix` | `-s` | — | Address must end with this hex string |
-| `--contains` | `-c` | — | Address must contain this hex string |
+| `--contains` | `-c` | — | Address must contain this hex pattern (supports `|` and groups) |
 | `--regex` | `-r` | — | Full regex applied to the `0x…` address |
 | `--count` | `-n` | `1` | Number of matching addresses to find |
 | `--workers` | `-w` | `NumCPU` | Parallel worker goroutines |

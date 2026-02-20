@@ -36,13 +36,13 @@ type saveErrMsg struct{ err error }
 
 // Form focus indices.
 const (
-	fieldPrefix    = 0
-	fieldSuffix    = 1
-	fieldContains  = 2
-	fieldCount     = 3
-	fieldWorkers   = 4
-	fieldCase      = 5
-	numFields      = 6
+	fieldPrefix   = 0
+	fieldSuffix   = 1
+	fieldContains = 2
+	fieldCount    = 3
+	fieldWorkers  = 4
+	fieldCase     = 5
+	numFields     = 6
 )
 
 // inputIndex maps a focusIdx to m.inputs slice index (-1 if not a text input).
@@ -110,7 +110,7 @@ func New() Model {
 	inputs[0] = newInput("e.g. e|f|ff", 28) // prefix
 	inputs[1] = newInput("e.g. e|f|ff", 28) // suffix
 	inputs[2] = newInput("e.g. e|f|ff", 28) // contains
-	inputs[3] = newInput("1", 6)          // count
+	inputs[3] = newInput("1", 6)            // count
 	inputs[3].SetValue("1")
 	inputs[4] = newInput(fmt.Sprintf("%d", runtime.NumCPU()), 6) // workers
 	inputs[4].SetValue(fmt.Sprintf("%d", runtime.NumCPU()))
@@ -203,7 +203,17 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.syncFocus()
 			return m, nil
 
+		case key.Matches(msg, keys.Down, keys.Right):
+			m.focusIdx = (m.focusIdx + 1) % numFields
+			m.syncFocus()
+			return m, nil
+
 		case key.Matches(msg, keys.ShiftTab):
+			m.focusIdx = (m.focusIdx + numFields - 1) % numFields
+			m.syncFocus()
+			return m, nil
+
+		case key.Matches(msg, keys.Up, keys.Left):
 			m.focusIdx = (m.focusIdx + numFields - 1) % numFields
 			m.syncFocus()
 			return m, nil
@@ -213,10 +223,6 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 
 		case key.Matches(msg, keys.Enter):
-			if m.focusIdx == fieldCase {
-				m.caseSensitive = !m.caseSensitive
-				return m, nil
-			}
 			if err := m.prepareSearch(); err != nil {
 				m.errMsg = err.Error()
 				return m, nil
@@ -289,17 +295,13 @@ func fieldLabel(fi int) string {
 }
 
 // hexValidationError returns an error string if val contains invalid chars.
-// Allows | for alternation (e.g. "dead|cafe").
+// Allows alternation and grouped patterns, e.g. "dead|cafe" or "(0|e|f)(00|ff)".
 func hexValidationError(val, label string) string {
-	for _, part := range strings.Split(val, "|") {
-		if part == "" {
-			return fmt.Sprintf("%s: empty alternative in '|' pattern", label)
-		}
-		for _, c := range strings.ToLower(part) {
-			if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
-				return fmt.Sprintf("%s: '%c' is not valid (use 0-9, a-f, | for alternation)", label, c)
-			}
-		}
+	if strings.TrimSpace(val) == "" {
+		return ""
+	}
+	if err := generator.ValidateHexPattern(val); err != nil {
+		return fmt.Sprintf("%s: %v", label, err)
 	}
 	return ""
 }
@@ -324,8 +326,10 @@ func (m *Model) prepareSearch() error {
 		return fmt.Errorf("enter at least one of: prefix, suffix, or contains")
 	}
 	for label, val := range map[string]string{"prefix": prefix, "suffix": suffix, "contains": contains} {
-		if val != "" && !generator.IsValidHexPattern(val) {
-			return fmt.Errorf("%s must be hex characters only (0-9, a-f)", label)
+		if val != "" {
+			if err := generator.ValidateHexPattern(val); err != nil {
+				return fmt.Errorf("%s: %v", label, err)
+			}
 		}
 	}
 
@@ -421,7 +425,7 @@ func (m Model) View() string {
 
 	box := styleBox.Render(body)
 	if m.width > 0 && m.height > 0 {
-		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
+		return lipgloss.Place(m.width, m.height, lipgloss.Left, lipgloss.Center, box)
 	}
 	return box
 }
@@ -474,8 +478,9 @@ func (m Model) viewForm() string {
 		m.inputs[0].Value(),
 		m.inputs[1].Value(),
 		m.inputs[2].Value(),
+		m.caseSensitive,
 	); d != nil {
-		b.WriteString(styleMuted.Render("  ~1 in "+formatBigInt(d)+"\n"))
+		b.WriteString(styleMuted.Render("  ~1 in " + formatBigInt(d) + "\n"))
 	}
 
 	b.WriteString("\n")
@@ -484,7 +489,11 @@ func (m Model) viewForm() string {
 		b.WriteString(styleDanger.Render("  "+m.errMsg) + "\n\n")
 	}
 
-	b.WriteString(styleHelp.Render("tab navigate  space toggle case  enter start  esc/ctrl+c quit"))
+	help := styleHelp.PaddingLeft(12)
+	b.WriteString(help.Render("up/down/tab move between fields") + "\n")
+	b.WriteString(help.Render("space toggles case sensitive") + "\n")
+	b.WriteString(help.Render("enter starts search") + "\n")
+	b.WriteString(help.Render("esc/ctrl+c/q quits"))
 	return b.String()
 }
 
@@ -501,17 +510,11 @@ func renderPreview(prefix, suffix, contains string) string {
 		if pat == "" {
 			return "", 0
 		}
-		if !strings.Contains(pat, "|") {
-			return pat, len(pat)
+		minLen := generator.MinHexPatternLen(pat)
+		if strings.Contains(pat, "|") && !strings.HasPrefix(pat, "(") {
+			return "(" + pat + ")", minLen
 		}
-		parts := strings.Split(pat, "|")
-		minLen := len(parts[0])
-		for _, p := range parts[1:] {
-			if len(p) < minLen {
-				minLen = len(p)
-			}
-		}
-		return "(" + pat + ")", minLen
+		return pat, minLen
 	}
 
 	prefixTok, prefixLen := patToken(prefix)
@@ -627,7 +630,7 @@ func computeETA(cfg generator.Config, found int, ratePerSec float64) time.Durati
 	if ratePerSec <= 0 {
 		return 0
 	}
-	d := generator.HexDifficulty(cfg.Prefix, cfg.Suffix, cfg.Contains)
+	d := generator.HexDifficulty(cfg.Prefix, cfg.Suffix, cfg.Contains, cfg.CaseSensitive)
 	if d == nil {
 		return 0
 	}
@@ -665,8 +668,13 @@ func patternDesc(cfg generator.Config) string {
 func fmtDuration(d time.Duration) string {
 	d = d.Round(time.Second)
 	h := int(d.Hours())
+	days := h / 24
+	h = h % 24
 	m := int(d.Minutes()) % 60
 	s := int(d.Seconds()) % 60
+	if days > 0 {
+		return fmt.Sprintf("%dd %02d:%02d:%02d", days, h, m, s)
+	}
 	if h > 0 {
 		return fmt.Sprintf("%02d:%02d:%02d", h, m, s)
 	}

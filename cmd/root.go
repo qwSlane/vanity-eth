@@ -98,8 +98,10 @@ func runRoot(cmd *cobra.Command, args []string) error {
 func runCLI(cmd *cobra.Command) error {
 	// Validate hex inputs.
 	for flag, val := range map[string]string{"prefix": flagPrefix, "suffix": flagSuffix, "contains": flagContains} {
-		if val != "" && !generator.IsValidHexPattern(val) {
-			return fmt.Errorf("--%s must be valid hex (got %q)", flag, val)
+		if val != "" {
+			if err := generator.ValidateHexPattern(val); err != nil {
+				return fmt.Errorf("--%s: %v", flag, err)
+			}
 		}
 	}
 
@@ -125,7 +127,7 @@ func runCLI(cmd *cobra.Command) error {
 
 	magenta.Print(logoASCII)
 	bold.Printf("vanity-eth  •  workers: %d  •  target: %d address(es)\n", flagWorkers, flagCount)
-	printPattern(flagPrefix, flagSuffix, flagContains, flagRegex)
+	printPattern(flagPrefix, flagSuffix, flagContains, flagRegex, flagCase)
 	fmt.Println()
 
 	ctx, cancel := signal.NotifyContext(cmd.Context(), syscall.SIGINT, syscall.SIGTERM)
@@ -220,7 +222,7 @@ func saveToFile(path string, results []generator.Result) error {
 	return nil
 }
 
-func printPattern(prefix, suffix, contains, regex string) {
+func printPattern(prefix, suffix, contains, regex string, caseSensitive bool) {
 	var parts []string
 	if prefix != "" {
 		parts = append(parts, fmt.Sprintf("prefix=%q", prefix))
@@ -236,7 +238,7 @@ func printPattern(prefix, suffix, contains, regex string) {
 	}
 	yellow.Printf("pattern: %s\n", strings.Join(parts, "  "))
 
-	if d := generator.HexDifficulty(prefix, suffix, contains); d != nil {
+	if d := generator.HexDifficulty(prefix, suffix, contains, caseSensitive); d != nil {
 		cyan.Printf("~1 in %s addresses match\n", d.String())
 		cyan.Printf("ETA will appear once the search starts\n")
 	}
@@ -258,7 +260,7 @@ func computeETA(cfg generator.Config, found, count int, ratePerSec float64) time
 	if ratePerSec <= 0 {
 		return 0
 	}
-	d := generator.HexDifficulty(cfg.Prefix, cfg.Suffix, cfg.Contains)
+	d := generator.HexDifficulty(cfg.Prefix, cfg.Suffix, cfg.Contains, cfg.CaseSensitive)
 	if d == nil {
 		return 0 // regex patterns: can't estimate
 	}
@@ -276,8 +278,13 @@ func computeETA(cfg generator.Config, found, count int, ratePerSec float64) time
 func fmtDuration(d time.Duration) string {
 	d = d.Round(time.Second)
 	h := int(d.Hours())
+	days := h / 24
+	h = h % 24
 	m := int(d.Minutes()) % 60
 	s := int(d.Seconds()) % 60
+	if days > 0 {
+		return fmt.Sprintf("%dd %02d:%02d:%02d", days, h, m, s)
+	}
 	if h > 0 {
 		return fmt.Sprintf("%02d:%02d:%02d", h, m, s)
 	}
